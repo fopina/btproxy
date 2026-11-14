@@ -59,6 +59,7 @@ type fakeBlueZ struct {
 	powerErr    *dbus.Error              // while set, powering the adapter off fails with it, as a refusing controller does
 	powerOnErr  *dbus.Error              // while set, powering the adapter on fails with it
 	startErr    *dbus.Error              // while set, StartDiscovery fails with it
+	hid         map[dbus.ObjectPath]bool // bonded HID devices, and whether each is connected
 	devices     map[dbus.ObjectPath]bool // announced with InterfacesAdded
 	connectFail bool                     // Device1.Connect fails
 	dropLinks   int                      // this many connects succeed, then lose the link before services resolve
@@ -169,8 +170,43 @@ type fakeRoot struct{ f *fakeBlueZ }
 func (r fakeRoot) GetManagedObjects() (map[dbus.ObjectPath]map[string]map[string]dbus.Variant, *dbus.Error) {
 	r.f.mu.Lock()
 	defer r.f.mu.Unlock()
-	return map[dbus.ObjectPath]map[string]map[string]dbus.Variant{fakeAdapter: {ifAdapter: {
-		"Address": dbus.MakeVariant("00:11:22:33:44:55"), "Powered": dbus.MakeVariant(r.f.powered)}}}, nil
+	objs := map[dbus.ObjectPath]map[string]map[string]dbus.Variant{fakeAdapter: {ifAdapter: {
+		"Address": dbus.MakeVariant("00:11:22:33:44:55"), "Powered": dbus.MakeVariant(r.f.powered)}}}
+	for p, connected := range r.f.hid {
+		objs[p] = map[string]map[string]dbus.Variant{ifDevice: {
+			"Address": dbus.MakeVariant("F2:22:26:24:29:82"), "AddressType": dbus.MakeVariant("random"),
+			"Bonded": dbus.MakeVariant(true), "Connected": dbus.MakeVariant(connected),
+			"UUIDs": dbus.MakeVariant([]string{"0000180f-0000-1000-8000-00805f9b34fb", hidUUID})}}
+	}
+	return objs, nil
+}
+
+// addHID adds a bonded HID device, connected or not.
+func (f *fakeBlueZ) addHID(p dbus.ObjectPath, connected bool) {
+	f.mu.Lock()
+	if f.hid == nil {
+		f.hid = map[dbus.ObjectPath]bool{}
+	}
+	f.hid[p] = connected
+	f.mu.Unlock()
+	f.exportMu.Lock()
+	defer f.exportMu.Unlock()
+	f.bus.Export(fakeHIDProps{f, p}, p, ifProps)
+}
+
+// fakeHIDProps are a HID device's properties; only Connected is read.
+type fakeHIDProps struct {
+	f *fakeBlueZ
+	p dbus.ObjectPath
+}
+
+func (h fakeHIDProps) Get(iface, name string) (dbus.Variant, *dbus.Error) {
+	h.f.mu.Lock()
+	defer h.f.mu.Unlock()
+	if name == "Connected" {
+		return dbus.MakeVariant(h.f.hid[h.p]), nil
+	}
+	return dbus.Variant{}, dbus.NewError("org.freedesktop.DBus.Error.InvalidArgs", nil)
 }
 
 type fakeProps struct{ f *fakeBlueZ }

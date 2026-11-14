@@ -80,11 +80,17 @@ type scanState struct {
 	refusedSince   time.Time // when bluetoothd began refusing to power the adapter on or start scanning; zero if not
 	lastPowerCycle time.Time
 	lastUSBReset   time.Time
-	lastPing       time.Time     // when bluetoothd was last checked; zero forces a check
-	unanswered     atomic.Int32  // calls from connections that bluetoothd did not answer, for the supervisor to count
-	pausedAt       time.Time     // when scanning was stopped for a connect; zero when not paused
-	restarts       atomic.Uint64 // bluetoothd restarts started, for Restarts
-	recoveries     atomic.Uint64 // power cycles and USB resets done, for Recoveries
+	lastPing       time.Time         // when bluetoothd was last checked; zero forces a check
+	gapAt          time.Time         // when the next scan gap is due (see gap.go); zero while not scanning actively
+	gapUntil       time.Time         // when the current scan gap ends; zero outside one
+	gapRearm       bool              // the next arm ends a gap, which is no reason to restart the stall watchdog
+	gapTimer       *time.Timer       // kicks the supervisor for gaps
+	hidDevs        []dbus.ObjectPath // bonded HID devices (see hidWaiting)
+	hidRead        time.Time         // when hidDevs was read
+	unanswered     atomic.Int32      // calls from connections that bluetoothd did not answer, for the supervisor to count
+	pausedAt       time.Time         // when scanning was stopped for a connect; zero when not paused
+	restarts       atomic.Uint64     // bluetoothd restarts started, for Restarts
+	recoveries     atomic.Uint64     // power cycles and USB resets done, for Recoveries
 }
 
 func (a *Adapter) initScan() error {
@@ -250,6 +256,11 @@ func (a *Adapter) reconcile() {
 		a.setStatus(ble.ScanFailed, mode)
 		a.strike()
 		return // armed again on the next tick
+	}
+	if a.gap(want) {
+		a.lastErr = ""
+		a.setStatus(ble.ScanRunning, mode)
+		return
 	}
 	if a.armed && (!want || a.armedMode != mode || a.armedEpoch != epoch) {
 		a.disarm()
@@ -485,13 +496,21 @@ func (g *restartGate) claimAfter(every time.Duration) bool {
 func (a *Adapter) arm(mode ble.ScanMode, epoch int) error {
 	quiet := a.quiet()
 	logf := a.log.Info
-	if !a.pausedAt.IsZero() { // after every connect: only worth a line when debugging
+	if !a.pausedAt.IsZero() || a.gapRearm { // after every connect or gap: only worth a line when debugging
 		logf = a.log.Debug
 	}
+	// After a gap the stall watchdog keeps counting from the last advertisement: gaps come every few seconds,
+	// and a scan that delivers nothing must not look fresh after each one. Not when BlueZ dropped the scan in
+	// the meantime (a new epoch), as after a bluetoothd restart.
+	since := time.Now()
+	if a.gapRearm && epoch == a.armedEpoch && !a.quietSince.IsZero() {
+		since = a.quietSince
+	}
+	a.gapRearm = false
 	if mode == ble.ScanPassive {
 		err := a.registerMonitors(quiet)
 		if err == nil {
-			a.armed, a.armedMode, a.armedEpoch, a.quietSince = true, ble.ScanPassive, epoch, time.Now()
+			a.armed, a.armedMode, a.armedEpoch, a.quietSince = true, ble.ScanPassive, epoch, since
 			a.rawActive.Store(false)
 			logf("scanning passively", "bluetoothd_reports_devices", !quiet)
 			return nil
@@ -531,7 +550,7 @@ func (a *Adapter) arm(mode ble.ScanMode, epoch int) error {
 		}
 		return err
 	}
-	a.armed, a.armedMode, a.armedEpoch, a.quietSince = true, ble.ScanActive, epoch, time.Now()
+	a.armed, a.armedMode, a.armedEpoch, a.quietSince = true, ble.ScanActive, epoch, since
 	a.rawActive.Store(true)
 	logf("scanning actively", "bluetoothd_reports_devices", !quiet)
 	return nil
