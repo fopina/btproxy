@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,6 +149,128 @@ func TestRefusedPowerCycleWithoutUSBResetRestarts(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("not restarted: %v", err)
+	}
+}
+
+// A controller that keeps refusing to power on leaves nothing to stall and nothing to time out, so the refusals
+// themselves move the recovery on: here through the power step to the USB reset.
+func TestRefusedPowerOnRecovers(t *testing.T) {
+	addr := startBus(t)
+	bz := startFakeBlueZ(t, addr, false)
+	defer bz.bus.Close()
+	var mu sync.Mutex
+	var steps []string
+	step := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		steps = append(steps, s)
+	}
+	resetUSBDevice = func(string) error { step("usb"); return nil }
+	t.Cleanup(func() { resetUSBDevice = hci.ResetUSB })
+	opt := testOptions(Options{WatchdogOptions: ble.WatchdogOptions{USBReset: true}})
+	opt.refuseWait = 100 * time.Millisecond
+	a, err := Open("hci0", opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetScanMode(ble.ScanActive)
+	stop, _ := a.Scan(func(ble.Advert) {})
+	defer stop()
+	bletest.WaitFor(t, "running", statusIs(a, ble.ScanRunning, ble.ScanActive))
+
+	bz.mu.Lock()
+	bz.onPowerOff = func() { step("power") }
+	bz.powerOnErr = dbus.NewError("org.bluez.Error.Busy", []any{"Operation already in progress"})
+	bz.mu.Unlock()
+	bz.setPowered(false)
+
+	bletest.WaitFor(t, "the USB step", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Contains(steps, "usb")
+	})
+	mu.Lock()
+	got := strings.Join(steps, " ")
+	mu.Unlock()
+	if got != "power usb" {
+		t.Errorf("steps %q", got)
+	}
+}
+
+// The same for a scan start that keeps being refused while the adapter is on.
+func TestRefusedScanStartRecovers(t *testing.T) {
+	addr := startBus(t)
+	bz := startFakeBlueZ(t, addr, false)
+	defer bz.bus.Close()
+	off := make(chan struct{}, 8)
+	bz.mu.Lock()
+	bz.onPowerOff = func() { off <- struct{}{} }
+	bz.startErr = dbus.NewError("org.bluez.Error.Failed", []any{"Device or resource busy"})
+	bz.mu.Unlock()
+	opt := testOptions(Options{})
+	opt.refuseWait = 100 * time.Millisecond
+	a, err := Open("hci0", opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetScanMode(ble.ScanActive)
+	stop, _ := a.Scan(func(ble.Advert) {})
+	defer stop()
+	select {
+	case <-off:
+	case <-time.After(5 * time.Second):
+		t.Fatal("adapter not power-cycled")
+	}
+	bz.mu.Lock()
+	bz.startErr = nil
+	bz.mu.Unlock()
+	bletest.WaitFor(t, "running after the power cycle", statusIs(a, ble.ScanRunning, ble.ScanActive))
+}
+
+// Refusals that end within refuseWait, as while an adapter sets up, and an rfkill block, which no step lifts,
+// take no step.
+func TestRefusalsThatTakeNoStep(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   *dbus.Error
+		until time.Duration // when the refusals end; 0 for never
+	}{
+		{"brief", dbus.NewError("org.bluez.Error.Busy", nil), 100 * time.Millisecond},
+		{"rfkill", dbus.NewError("org.bluez.Error.Blocked", []any{"Blocked through rfkill"}), 0},
+		{"old rfkill", dbus.NewError("org.bluez.Error.Failed", []any{"Blocked through rfkill"}), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr := startBus(t)
+			bz := startFakeBlueZ(t, addr, false)
+			defer bz.bus.Close()
+			opt := testOptions(Options{})
+			opt.refuseWait = 300 * time.Millisecond
+			a, err := Open("hci0", opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.SetScanMode(ble.ScanActive)
+			stop, _ := a.Scan(func(ble.Advert) {})
+			defer stop()
+			bletest.WaitFor(t, "running", statusIs(a, ble.ScanRunning, ble.ScanActive))
+
+			var cycled atomic.Bool
+			bz.mu.Lock()
+			bz.onPowerOff = func() { cycled.Store(true) }
+			bz.powerOnErr = tc.err
+			bz.mu.Unlock()
+			bz.setPowered(false)
+			if tc.until > 0 {
+				time.Sleep(tc.until)
+				bz.mu.Lock()
+				bz.powerOnErr = nil
+				bz.mu.Unlock()
+			}
+			time.Sleep(4 * opt.refuseWait)
+			if cycled.Load() || a.Recoveries() != 0 {
+				t.Errorf("a step ran: power-cycled %v, Recoveries() = %d", cycled.Load(), a.Recoveries())
+			}
+		})
 	}
 }
 

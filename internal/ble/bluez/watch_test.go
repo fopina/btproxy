@@ -57,6 +57,8 @@ type fakeBlueZ struct {
 	hung        chan struct{}            // while set, property reads and writes wait for it to close too
 	onPowerOff  func()                   // called when a client powers the adapter off
 	powerErr    *dbus.Error              // while set, powering the adapter off fails with it, as a refusing controller does
+	powerOnErr  *dbus.Error              // while set, powering the adapter on fails with it
+	startErr    *dbus.Error              // while set, StartDiscovery fails with it
 	devices     map[dbus.ObjectPath]bool // announced with InterfacesAdded
 	connectFail bool                     // Device1.Connect fails
 	dropLinks   int                      // this many connects succeed, then lose the link before services resolve
@@ -200,7 +202,7 @@ func (p fakeProps) Get(iface, name string) (dbus.Variant, *dbus.Error) {
 
 func (p fakeProps) Set(iface, name string, v dbus.Variant) *dbus.Error {
 	p.f.mu.Lock()
-	hung, onOff, powerErr := p.f.hung, p.f.onPowerOff, p.f.powerErr
+	hung, onOff, powerErr, powerOnErr := p.f.hung, p.f.onPowerOff, p.f.powerErr, p.f.powerOnErr
 	p.f.mu.Unlock()
 	if hung != nil {
 		<-hung
@@ -211,6 +213,9 @@ func (p fakeProps) Set(iface, name string, v dbus.Variant) *dbus.Error {
 				onOff()
 			}
 			return powerErr
+		}
+		if v.Value() == true && powerOnErr != nil {
+			return powerOnErr
 		}
 		if v.Value() != true && onOff != nil {
 			onOff()
@@ -276,6 +281,9 @@ func (a fakeAdapterIf) StartDiscovery() *dbus.Error {
 	}
 	a.f.mu.Lock()
 	defer a.f.mu.Unlock()
+	if a.f.startErr != nil {
+		return a.f.startErr
+	}
 	if !a.f.powered {
 		return dbus.NewError("org.bluez.Error.NotReady", nil)
 	}
