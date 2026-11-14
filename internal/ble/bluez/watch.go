@@ -77,6 +77,7 @@ type scanState struct {
 	strikes        int       // stalls and unanswered calls since bluetoothd last answered, or the last step
 	step           int       // the recovery step to try next
 	lastStrike     time.Time
+	refusedSince   time.Time // when bluetoothd began refusing to power the adapter on or start scanning; zero if not
 	lastPowerCycle time.Time
 	lastUSBReset   time.Time
 	lastPing       time.Time     // when bluetoothd was last checked; zero forces a check
@@ -215,6 +216,7 @@ func (a *Adapter) reconcile() {
 				a.strike()
 			} else {
 				idle(ble.ScanStopped)
+				a.refusal(err)
 			}
 			return
 		}
@@ -238,6 +240,7 @@ func (a *Adapter) reconcile() {
 			a.pausedAt = time.Now()
 		}
 		a.lastErr = ""
+		a.refusedSince = time.Time{}
 		a.setStatus(ble.ScanIdle, mode)
 		return
 	}
@@ -258,6 +261,8 @@ func (a *Adapter) reconcile() {
 			a.setStatus(ble.ScanFailed, mode)
 			if isTimeout(err) {
 				a.strike()
+			} else {
+				a.refusal(err)
 			}
 			return
 		}
@@ -269,6 +274,7 @@ func (a *Adapter) reconcile() {
 	}
 	a.pausedAt = time.Time{}
 	a.lastErr = ""
+	a.refusedSince = time.Time{}
 	idle(ble.ScanRunning) // running if wanted, idle otherwise
 }
 
@@ -286,6 +292,35 @@ func (a *Adapter) fail(what string, err error) {
 func (a *Adapter) stalled(want bool) bool {
 	return want && a.armed && a.armedMode == ble.ScanActive && a.stallTimeout > 0 &&
 		time.Since(a.quietSince) >= a.stallTimeout
+}
+
+// refusal counts a call to power the adapter on or start scanning that bluetoothd answered with an error. Unlike
+// a timeout this says bluetoothd works, but a controller with wedged firmware refuses these for good (an Intel
+// Wireless-AC 3168 answered Busy), and with the adapter off or not scanning neither the stall watchdog nor
+// advertisements would ever move the recovery on. Refusals for refuseWait in a row make a strike, and every
+// refuseWait after that another one. Bluetoothd refuses briefly while the adapter sets up, which this lets pass,
+// and an rfkill block, which no recovery step lifts, does not count.
+func (a *Adapter) refusal(err error) {
+	if !isBlueZError(err) || isBlocked(err) {
+		a.refusedSince = time.Time{}
+		return
+	}
+	if a.refusedSince.IsZero() {
+		a.refusedSince = time.Now()
+		return
+	}
+	if time.Since(a.refusedSince) >= a.tm.refuseWait {
+		a.log.Warn("bluetoothd keeps refusing", "for", time.Since(a.refusedSince).Round(time.Second), "err", err)
+		a.refusedSince = time.Now()
+		a.strike()
+	}
+}
+
+// isBlocked tells whether err is BlueZ refusing because of an rfkill block: org.bluez.Error.Blocked in newer
+// BlueZ, org.bluez.Error.Failed "Blocked through rfkill" in older ones.
+func isBlocked(err error) bool {
+	var de dbus.Error
+	return errors.As(err, &de) && (de.Name == "org.bluez.Error.Blocked" || strings.Contains(de.Error(), "rfkill"))
 }
 
 // strike counts a stall or a call bluetoothd did not answer. After restartAfter in a row, each within

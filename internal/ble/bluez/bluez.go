@@ -54,6 +54,9 @@ type timings struct {
 	// refused or unanswered) and checks for a stalled scan; recovery from a bluetoothd restart or an adapter
 	// coming back is driven by signals instead.
 	scanRetry time.Duration
+	// refuseWait is how long bluetoothd may refuse to power the adapter on or start scanning before each strike
+	// (see refusal).
+	refuseWait time.Duration
 	// pingEvery is how often the supervisor checks that bluetoothd still answers. Advertisements are no proof
 	// once they come from the HCI monitor, which keeps reading the controller while bluetoothd hangs.
 	pingEvery time.Duration
@@ -72,6 +75,7 @@ func (t timings) withDefaults() timings {
 		disconnectWait: cmp.Or(t.disconnectWait, 2*time.Second),
 		scanRetry:      cmp.Or(t.scanRetry, 10*time.Second),
 		pingEvery:      cmp.Or(t.pingEvery, time.Minute),
+		refuseWait:     cmp.Or(t.refuseWait, time.Minute),
 		monitorRetry:   cmp.Or(t.monitorRetry, time.Minute),
 		pauseWait:      cmp.Or(t.pauseWait, 2*time.Second),
 		pauseLimit:     cmp.Or(t.pauseLimit, connectTimeout+resolveTimeout),

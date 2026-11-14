@@ -523,7 +523,9 @@ failing. It checks in passive mode too. The rest of this section is about BlueZ.
 `bluetoothd` can hang while keeping its D-Bus name (BlueZ 5.66 with an RTL8761B: several times a night). The
 proxy detects it by: D-Bus calls timing out after 10 s (disconnects after 30 s; GATT, connect and pair have their
 own 30 s limits), a health-check property read every minute, and in active mode no advertisement for
-`-stall-timeout` (which restarts discovery).
+`-stall-timeout` (which restarts discovery). A controller with wedged firmware can leave `bluetoothd` answering
+but refusing to power the adapter on or to start scanning; each minute of that counts as a stall too, except for an
+rfkill block, which none of the steps below lifts.
 
 From the second stall or timeout, each within 10 minutes of the previous (and, without the HCI monitor, no
 advertisement in between), every further one takes the next step:
