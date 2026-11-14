@@ -528,7 +528,9 @@ own 30 s limits), a health-check property read every minute, and in active mode 
 From the second stall or timeout, each within 10 minutes of the previous (and, without the HCI monitor, no
 advertisement in between), every further one takes the next step:
 
-1. Power-cycle the adapter through BlueZ. If `bluetoothd` does not answer, this goes straight to step 2.
+1. Power-cycle the adapter through BlueZ. If `bluetoothd` does not answer, this goes straight to step 2. If it
+   answers with an error (the controller refused, as an Intel Wireless-AC 3168 with wedged firmware does with
+   `Busy`), a `bluetoothd` restart cannot help, so with `-usb-reset` this goes straight to step 3.
 2. Run `-bluetoothd-restart` via `/bin/sh -c`, killed after 30 s; the contrib scripts set it.
 3. With `-usb-reset`, reset the adapter's USB device: the driver sets the adapter up again, loading its firmware
    if it uses any.

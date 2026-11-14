@@ -56,6 +56,7 @@ type fakeBlueZ struct {
 	wedge       chan struct{}            // while set, StartDiscovery waits for it to close, as a wedged bluetoothd does
 	hung        chan struct{}            // while set, property reads and writes wait for it to close too
 	onPowerOff  func()                   // called when a client powers the adapter off
+	powerErr    *dbus.Error              // while set, powering the adapter off fails with it, as a refusing controller does
 	devices     map[dbus.ObjectPath]bool // announced with InterfacesAdded
 	connectFail bool                     // Device1.Connect fails
 	dropLinks   int                      // this many connects succeed, then lose the link before services resolve
@@ -199,12 +200,18 @@ func (p fakeProps) Get(iface, name string) (dbus.Variant, *dbus.Error) {
 
 func (p fakeProps) Set(iface, name string, v dbus.Variant) *dbus.Error {
 	p.f.mu.Lock()
-	hung, onOff := p.f.hung, p.f.onPowerOff
+	hung, onOff, powerErr := p.f.hung, p.f.onPowerOff, p.f.powerErr
 	p.f.mu.Unlock()
 	if hung != nil {
 		<-hung
 	}
 	if name == "Powered" {
+		if v.Value() != true && powerErr != nil {
+			if onOff != nil {
+				onOff()
+			}
+			return powerErr
+		}
 		if v.Value() != true && onOff != nil {
 			onOff()
 		}

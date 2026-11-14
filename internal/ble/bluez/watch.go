@@ -311,8 +311,14 @@ func (a *Adapter) strike() {
 func (a *Adapter) takeStep() {
 	if a.step == stepPowerCycle {
 		a.step = stepRestart
-		if a.powerCycle() {
+		done, refused := a.powerCycle()
+		if done {
 			return
+		}
+		if refused && a.resetUSB != nil {
+			// bluetoothd answered, so restarting it cannot help: the controller is what refused.
+			a.log.Warn("the controller refused the power cycle, skipping the bluetoothd restart")
+			a.step = stepUSB
 		}
 	}
 	if a.step == stepRestart {
@@ -344,23 +350,34 @@ func (a *Adapter) takeStep() {
 
 // powerCycle turns the adapter off and on through BlueZ, and tells whether it did. A bluetoothd that does not
 // answer cannot do this, so it says no at the first timeout and the caller goes on to restarting it.
-func (a *Adapter) powerCycle() bool {
+//
+// refused tells that bluetoothd answered with a BlueZ error instead: the controller would not change power.
+// Seen on an Intel Wireless-AC 3168 (8087:0aa7) whose firmware stopped taking LE scan commands (the kernel
+// logs "Unable to disable scanning: -16"): powering off failed with org.bluez.Error.Busy, a bluetoothd restart
+// changed nothing, and only reloading the controller's firmware helped.
+func (a *Adapter) powerCycle() (done, refused bool) {
 	if !a.lastPowerCycle.IsZero() && time.Since(a.lastPowerCycle) < restartEvery {
-		return false
+		return false, false
 	}
 	a.lastPowerCycle = time.Now()
 	a.log.Warn("no scanning, power-cycling the adapter")
 	if err := a.setProperty(a.path, ifAdapter+".Powered", false); err != nil {
 		a.log.Warn("power-cycling the adapter failed", "err", err)
-		return false
+		return false, isBlueZError(err)
 	}
 	// If this fails the adapter stays off, and reconcile keeps trying to power it on.
 	if err := a.setProperty(a.path, ifAdapter+".Powered", true); err != nil {
 		a.log.Warn("power-cycling the adapter failed", "err", err)
-		return false
+		return false, isBlueZError(err)
 	}
 	a.recoveries.Add(1)
-	return true
+	return true, false
+}
+
+// isBlueZError tells whether err is an error bluetoothd sent back, as opposed to a timeout or a broken bus.
+func isBlueZError(err error) bool {
+	var de dbus.Error
+	return errors.As(err, &de) && strings.HasPrefix(de.Name, "org.bluez.Error.")
 }
 
 // runRestart runs restartCmd and waits for it, up to restartTimeout.

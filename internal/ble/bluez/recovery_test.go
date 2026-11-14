@@ -6,10 +6,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/godbus/dbus/v5"
 
 	"github.com/yuzi-co/btproxy/internal/ble"
 	"github.com/yuzi-co/btproxy/internal/ble/bletest"
@@ -69,6 +72,82 @@ func TestRecoverySteps(t *testing.T) {
 	}
 	if a.Recoveries() != 2 || a.Restarts() != 1 {
 		t.Errorf("Recoveries() = %d, Restarts() = %d", a.Recoveries(), a.Restarts())
+	}
+}
+
+// A controller that refuses the power cycle (bluetoothd answers Busy) is not fixed by restarting bluetoothd, so
+// with the USB step on, the recovery goes from the power step straight to it. Seen on an Intel Wireless-AC 3168.
+func TestRefusedPowerCycleSkipsTheRestart(t *testing.T) {
+	bluetoothdRestarts = restartGate{}
+	t.Cleanup(func() { bluetoothdRestarts = restartGate{} })
+	addr := startBus(t)
+	bz := startFakeBlueZ(t, addr, false)
+	defer bz.bus.Close()
+	bz.setWedged(true)
+
+	var mu sync.Mutex
+	var steps []string
+	step := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		steps = append(steps, s)
+	}
+	bz.mu.Lock()
+	bz.onPowerOff = func() { step("power") }
+	bz.powerErr = dbus.NewError("org.bluez.Error.Busy", []any{"Operation already in progress"})
+	bz.mu.Unlock()
+	marker := filepath.Join(t.TempDir(), "restarted")
+	resetUSBDevice = func(string) error { step("usb"); return nil }
+	t.Cleanup(func() { resetUSBDevice = hci.ResetUSB })
+	a, err := Open("hci0", testOptions(Options{RestartCmd: "touch '" + marker + "'", WatchdogOptions: ble.WatchdogOptions{USBReset: true}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetScanMode(ble.ScanActive)
+	stop, _ := a.Scan(func(ble.Advert) {})
+	defer stop()
+
+	bletest.WaitFor(t, "the USB step", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Contains(steps, "usb")
+	})
+	mu.Lock()
+	got := strings.Join(steps, " ")
+	mu.Unlock()
+	if got != "power usb" {
+		t.Errorf("steps %q", got)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("bluetoothd restarted although it answered")
+	}
+	if a.Restarts() != 0 {
+		t.Errorf("Restarts() = %d", a.Restarts())
+	}
+}
+
+// Without the USB step, a refused power cycle still leads to the restart: it is all there is left to try.
+func TestRefusedPowerCycleWithoutUSBResetRestarts(t *testing.T) {
+	bluetoothdRestarts = restartGate{}
+	t.Cleanup(func() { bluetoothdRestarts = restartGate{} })
+	addr := startBus(t)
+	bz := startFakeBlueZ(t, addr, false)
+	defer bz.bus.Close()
+	bz.mu.Lock()
+	bz.powerErr = dbus.NewError("org.bluez.Error.Busy", nil)
+	bz.mu.Unlock()
+	marker := filepath.Join(t.TempDir(), "restarted")
+	a, err := Open("hci0", testOptions(Options{RestartCmd: "touch '" + marker + "'"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		a.strikes = restartAfter
+		a.lastStrike = time.Now()
+		a.strike()
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("not restarted: %v", err)
 	}
 }
 
@@ -147,7 +226,7 @@ func TestPowerCycleKeepsPassiveScanning(t *testing.T) {
 	if err := a.registerMonitors(false); err != nil {
 		t.Fatalf("registering again: %v", err)
 	}
-	if !a.powerCycle() {
+	if done, _ := a.powerCycle(); !done {
 		t.Fatal("not cycled")
 	}
 	time.Sleep(200 * time.Millisecond)
