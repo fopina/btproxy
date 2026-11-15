@@ -311,6 +311,10 @@ On Linux, the default `-backend auto` picks one at start and logs why:
 - `bluez` is picked while `bluetoothd` runs, or when the HCI monitor cannot be read. It is the backend for a host
   that needs `bluetoothd` for something else, such as headphones or a mouse, since the kernel backend cannot share
   the adapter with it. It stays supported; the kernel backend is the default and the one new work goes to first.
+  A bonded keyboard or mouse reconnects with directed advertisements, which the controller drops while the proxy
+  scans actively. So while one is bonded but not connected, the proxy stops active scanning for 1 s of every 2 s,
+  and the kernel's own scan lets it back in, within about a second of a key press. A local keyboard comes first:
+  this halves active scanning for as long as one is away, off or asleep, and only on such a host.
 
 `auto` asks the kernel which programs hold a Bluetooth control socket, so it also sees a `bluetoothd` on the host of a
 container. A `bluetoothd` that starts after the proxy is not stopped: the proxy logs an error within a minute, and

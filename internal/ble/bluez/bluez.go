@@ -60,6 +60,9 @@ type timings struct {
 	// pingEvery is how often the supervisor checks that bluetoothd still answers. Advertisements are no proof
 	// once they come from the HCI monitor, which keeps reading the controller while bluetoothd hangs.
 	pingEvery time.Duration
+	// gapEvery and gapLen space and size the scan gaps that let a bonded keyboard or mouse reconnect (see
+	// gap.go); gapEvery 0 turns them off. hidRefresh is how often the list of such devices is read again.
+	gapEvery, gapLen, hidRefresh time.Duration
 	// monitorRetry is the first wait before trying monitors BlueZ dropped again (see monitorReleased).
 	monitorRetry time.Duration
 	// pauseWait is how long a connect waits for the supervisor to stop scanning before it goes ahead anyway,
@@ -76,6 +79,9 @@ func (t timings) withDefaults() timings {
 		scanRetry:      cmp.Or(t.scanRetry, 10*time.Second),
 		pingEvery:      cmp.Or(t.pingEvery, time.Minute),
 		refuseWait:     cmp.Or(t.refuseWait, time.Minute),
+		gapEvery:       cmp.Or(t.gapEvery, 2*time.Second),
+		gapLen:         cmp.Or(t.gapLen, time.Second),
+		hidRefresh:     cmp.Or(t.hidRefresh, 5*time.Minute),
 		monitorRetry:   cmp.Or(t.monitorRetry, time.Minute),
 		pauseWait:      cmp.Or(t.pauseWait, 2*time.Second),
 		pauseLimit:     cmp.Or(t.pauseLimit, connectTimeout+resolveTimeout),
