@@ -121,3 +121,26 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-X main.version=99.0.0" -o work/amd64-upgrade ./cmd/btproxy
           contrib/openwrt/package-all.sh 99.0.0 work/upgrade amd64=work/amd64-upgrade
           test/openwrt_upgrade.sh "${{ matrix.version }}" work/v041 work/upgrade
+
+  linux-packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:bookworm", "debian:trixie", "ubuntu:24.04", "fedora:44"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build packages
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p work/new work/old
+          go build -ldflags="-X main.version=0.0.1" -o work/amd64-old ./cmd/btproxy
+          go build -ldflags="-X main.version=0.0.2" -o work/amd64-new ./cmd/btproxy
+          contrib/linux/package.sh 0.0.1 work/old amd64=work/amd64-old
+          contrib/linux/package.sh 0.0.2 work/new amd64=work/amd64-new
+      - run: test/linux_package.sh "${{ matrix.image }}" work/new work/old

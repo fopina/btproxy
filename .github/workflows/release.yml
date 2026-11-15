@@ -1,7 +1,7 @@
 name: Release
 
-# Pushing a tag such as v0.1.0 publishes a GitHub release with an archive for each platform and their checksums,
-# then a container image on GitHub's registry and the signed OpenWrt feed on GitHub Pages.
+# Pushing a tag such as v0.1.0 publishes a GitHub release with an archive for each platform, deb and rpm packages and
+# their checksums, then a container image on GitHub's registry and the signed OpenWrt feed on GitHub Pages.
 
 on:
   push:
@@ -41,6 +41,8 @@ jobs:
           (cd pkg/windows-amd64 && zip -9q ../../dist/btproxy-windows-amd64.zip btproxy.exe LICENSE README.md)
           contrib/openwrt/package-all.sh "${GITHUB_REF_NAME#v}" dist amd64=pkg/linux-amd64/btproxy \
             arm64=pkg/linux-arm64/btproxy armv7=pkg/linux-armv7/btproxy mipsle=pkg/linux-mipsle/btproxy
+          contrib/linux/package.sh "${GITHUB_REF_NAME#v}" dist amd64=pkg/linux-amd64/btproxy \
+            arm64=pkg/linux-arm64/btproxy armv7=pkg/linux-armv7/btproxy
           (cd dist && sha256sum btproxy* luci-app-btproxy* > SHA256SUMS)
       - name: Publish
         env:

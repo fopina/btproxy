@@ -1,0 +1,42 @@
+[Unit]
+Description=btproxy, ESPHome-compatible Bluetooth proxy
+Documentation=https://github.com/yuzi-co/btproxy
+# Starts after bluetoothd if that is enabled, without starting it: Wants= would bring back a bluetoothd stopped for the
+# kernel backend.
+Wants=network-online.target
+After=bluetooth.service network-online.target
+
+# The unit the deb and rpm packages install. Settings go in /etc/btproxy/config.json, a flat JSON object of flag values
+# such as {"area": "Garage", "encryption-key": "..."}, then systemctl restart btproxy. Flags that the file cannot
+# hold go in a drop-in from systemctl edit btproxy, which survives upgrades.
+[Service]
+ExecStart=/usr/bin/btproxy -config /etc/btproxy/config.json -bluetoothd-restart "systemctl restart bluetooth"
+Restart=always
+RestartSec=5
+# /etc/btproxy holds the settings file, which may hold the encryption key, and the keys of bonded devices on the kernel
+# backend; the settings page saves the file there.
+ConfigurationDirectory=btproxy
+ConfigurationDirectoryMode=0700
+ReadWritePaths=/etc/btproxy
+
+# Runs as root for the management socket, CAP_NET_RAW and, on the bluez backend, D-Bus access and -bluetoothd-restart;
+# the rest is taken away.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# AF_UNIX: D-Bus. AF_NETLINK: network interfaces, for mDNS. AF_BLUETOOTH: the kernel's Bluetooth stack, HCI monitor.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_BLUETOOTH
+
+[Install]
+WantedBy=multi-user.target

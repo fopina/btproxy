@@ -1,0 +1,48 @@
+# The deb and rpm packages, built by package.sh with nfpm. VERSION and ARCH (amd64, arm64 or arm7) come from the
+# environment; package.sh puts the binary's path in place of @BINARY@.
+name: btproxy
+version: ${VERSION}
+version_schema: semver
+arch: ${ARCH}
+platform: linux
+section: net
+priority: optional
+maintainer: yuzi-co <7278850+yuzi-co@users.noreply.github.com>
+description: |-
+  ESPHome-compatible Bluetooth proxy for Home Assistant
+  Relays Bluetooth LE advertisements and connections from this host's adapter to Home Assistant over the ESPHome
+  native API.
+vendor: yuzi-co
+homepage: https://github.com/yuzi-co/btproxy
+license: MIT
+
+suggests:
+  - bluez
+
+contents:
+  - src: "@BINARY@"
+    dst: /usr/bin/btproxy
+    file_info:
+      mode: 0755
+  - src: contrib/linux/btproxy.service
+    dst: /usr/lib/systemd/system/btproxy.service
+    file_info:
+      mode: 0644
+  - dst: /etc/btproxy
+    type: dir
+    file_info:
+      mode: 0700
+  - src: contrib/linux/config.json
+    dst: /etc/btproxy/config.json
+    type: config|noreplace
+    file_info:
+      mode: 0600
+  - src: LICENSE
+    dst: /usr/share/doc/btproxy/LICENSE
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: contrib/linux/postinstall.sh
+  preremove: contrib/linux/preremove.sh
+  postremove: contrib/linux/postremove.sh
