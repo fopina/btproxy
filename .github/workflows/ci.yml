@@ -144,3 +144,10 @@ jobs:
           contrib/linux/package.sh 0.0.1 work/old amd64=work/amd64-old
           contrib/linux/package.sh 0.0.2 work/new amd64=work/amd64-new
       - run: test/linux_package.sh "${{ matrix.image }}" work/new work/old
+      - name: Repository
+        run: |
+          contrib/linux/repo-keygen.sh --no-upload work/key
+          docker run --rm -v "$PWD:/src" -w /src debian:trixie sh -c '
+            apt-get update -qq && apt-get install -qqy --no-install-recommends apt-utils gnupg createrepo-c rpm >/dev/null
+            contrib/linux/repo.sh work/new work/site work/key/repo.sec'
+          test/linux_repo.sh "${{ matrix.image }}" work/site 0.0.2

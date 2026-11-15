@@ -190,12 +190,30 @@ To install by hand, copy the binary to `/usr/bin/btproxy`,
 
 ### Debian, Ubuntu and Fedora
 
-The releases have deb and rpm packages for amd64, arm64 and armv7 (armhf), for any distribution with systemd. Download
-the one for your machine and install it with the package manager, which also upgrades to a newer one the same way:
+The releases have deb and rpm packages for amd64, arm64 and armv7 (armhf), for any distribution with systemd. A
+signed apt or dnf repository brings upgrades with the rest of the system:
 
 ```sh
-sudo apt install ./btproxy-linux-arm64.deb    # Debian, Ubuntu, Raspberry Pi OS
-sudo dnf install ./btproxy-linux-amd64.rpm    # Fedora, RHEL, AlmaLinux
+# Debian, Ubuntu, Raspberry Pi OS
+sudo curl -fsSLo /usr/share/keyrings/btproxy.gpg https://yuzi-co.github.io/btproxy/keys/btproxy.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/btproxy.sources https://yuzi-co.github.io/btproxy/deb/btproxy.sources
+sudo apt update && sudo apt install btproxy
+
+# Fedora, RHEL, AlmaLinux
+sudo curl -fsSLo /etc/yum.repos.d/btproxy.repo https://yuzi-co.github.io/btproxy/rpm/btproxy.repo
+sudo dnf install btproxy
+```
+
+dnf asks to accept the key on the first install. Its fingerprint is `5D15 BAA8 3BB1 BC61 38D3 8DC4 7493 FF18 4AB2 8213`,
+and it is in [contrib/linux/keys](contrib/linux/keys) too. The repositories hold only the latest release, for amd64,
+arm64 and armhf (armhfp on dnf).
+
+Without the repository, download the package for your machine and install the file; installing a newer one the same
+way upgrades it, and installing from the repository later moves onto it:
+
+```sh
+sudo apt install ./btproxy-linux-arm64.deb
+sudo dnf install ./btproxy-linux-amd64.rpm
 ```
 
 The service starts straight away and on every boot, with the `auto` backend and the API unencrypted, as on OpenWrt.
