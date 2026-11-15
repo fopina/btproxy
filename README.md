@@ -80,13 +80,15 @@ Yes, with no drivers or runtime to install beyond an LE adapter. Windows 11 is t
 
 ### Does it run on a Raspberry Pi?
 
-Yes. The releases include Linux arm64 and armv7 builds, and [Deploy](#deploy) has a systemd unit. It has run on a
+Yes. The releases include deb packages for Raspberry Pi OS (arm64 and armhf), see
+[Debian, Ubuntu and Fedora](#debian-ubuntu-and-fedora). It has run on a
 Raspberry Pi 3 with its built-in adapter, using the arm64 build and the kernel backend; [Backends](#backends) lists
 what that covers.
 
 ## Install
 
-OpenWrt has packages and a signed feed: see [OpenWrt](#openwrt). Otherwise, download the archive for your platform
+OpenWrt has packages and a signed feed: see [OpenWrt](#openwrt). Debian, Ubuntu, Raspberry Pi OS and Fedora have deb
+and rpm packages: see [Debian, Ubuntu and Fedora](#debian-ubuntu-and-fedora). Otherwise, download the archive for your platform
 from the [releases](https://github.com/yuzi-co/btproxy/releases) and unpack it (`tar xzf` on Linux, a `.zip` on
 Windows), then see [Deploy](#deploy) below. With Go 1.27.3 or newer: `go install github.com/yuzi-co/btproxy/cmd/btproxy@latest`. There is also a
 [Docker image](#docker) for Linux hosts.
@@ -186,9 +188,35 @@ To install by hand, copy the binary to `/usr/bin/btproxy`,
 [btproxy.init](contrib/openwrt/btproxy.init) to `/etc/init.d/btproxy` and
 [btproxy.config](contrib/openwrt/btproxy.config) to `/etc/config/btproxy`.
 
+### Debian, Ubuntu and Fedora
+
+The releases have deb and rpm packages for amd64, arm64 and armv7 (armhf), for any distribution with systemd. Download
+the one for your machine and install it with the package manager, which also upgrades to a newer one the same way:
+
+```sh
+sudo apt install ./btproxy-linux-arm64.deb    # Debian, Ubuntu, Raspberry Pi OS
+sudo dnf install ./btproxy-linux-amd64.rpm    # Fedora, RHEL, AlmaLinux
+```
+
+The service starts straight away and on every boot, with the `auto` backend and the API unencrypted, as on OpenWrt.
+Settings go in `/etc/btproxy/config.json`, the [settings file](#settings-page), such as
+`{"area": "Garage", "encryption-key": "..."}`, then `sudo systemctl restart btproxy`. The keys of bonded devices are in
+`/etc/btproxy` too. A flag the file cannot hold, such as `-backend` or `-ui-password-file`, goes in a drop-in from
+`sudo systemctl edit btproxy`, which repeats the `ExecStart` line with it:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/bin/btproxy -config /etc/btproxy/config.json -bluetoothd-restart "systemctl restart bluetooth" -backend kernel
+```
+
+Upgrades keep both the settings and the drop-in. Removing the package stops the service and keeps `/etc/btproxy`;
+`apt purge` deletes it. The unit is [contrib/linux/btproxy.service](contrib/linux/btproxy.service), with the same
+sandboxing as the one below. BlueZ is not a dependency: install it for the bluez backend.
+
 ### systemd and Windows
 
-systemd (Raspberry Pi OS, Debian): copy the binary to `/usr/local/bin/btproxy` and
+Other distributions with systemd: copy the binary to `/usr/local/bin/btproxy` and
 [contrib/systemd/btproxy.service](contrib/systemd/btproxy.service) to `/etc/systemd/system/`, then
 `systemctl enable --now btproxy`. The unit starts after `bluetooth.service` if that is enabled, without starting it or
 depending on it, so the proxy survives a `bluetoothd` restart. Bonds on the kernel backend go in `/var/lib/btproxy`. For encryption, put the key in `/etc/btproxy.key` (`chmod 600`) and use the two
