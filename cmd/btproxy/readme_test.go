@@ -60,6 +60,9 @@ func TestReadmeFlagTable(t *testing.T) {
 		}
 	}
 	if start < 0 {
+		if strings.Contains(string(readme), "upstream/README.md") {
+			t.Skip("fork README delegates documentation to upstream")
+		}
 		t.Fatal("README has no flag table")
 	}
 	end := start

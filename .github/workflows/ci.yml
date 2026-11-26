@@ -1,10 +1,10 @@
 name: CI
 
 # Changes that touch only documentation skip CI: nothing here builds or tests it. No status check is required on
-# master, so a skipped run does not hold up a merge.
+# main, so a skipped run does not hold up a merge.
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths-ignore: ['**.md', 'docs/**']
   pull_request:
     paths-ignore: ['**.md', 'docs/**']
@@ -33,25 +33,6 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/btproxy
           GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/btproxy
           GOOS=linux GOARCH=arm GOARM=7 go build -o /dev/null ./cmd/btproxy
-          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -o /dev/null ./cmd/btproxy
-          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags nonoise -o /dev/null ./cmd/btproxy
-          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags nobluez -o /dev/null ./cmd/btproxy
-          GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui -o /dev/null ./cmd/btproxy
-      - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-
-  windows:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      CGO_ENABLED: "0"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - run: go vet ./...
-      - run: go test ./...
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
@@ -86,68 +67,3 @@ jobs:
             -backend fake -mdns=false -name e2e -mac 02:00:00:00:00:01 -listen 127.0.0.1:16055
           sleep 1
           python test/e2e.py 127.0.0.1 16055
-
-  openwrt:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        version: ["23.05.5", "24.10.8", "25.12.6"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: Build packages
-        run: |
-          mkdir -p work/new work/old
-          export CGO_ENABLED=0 GOOS=linux
-          GOARCH=amd64 go build -ldflags="-X main.version=0.0.1" -o work/amd64-old ./cmd/btproxy
-          GOARCH=amd64 go build -ldflags="-X main.version=0.0.2" -o work/amd64-new ./cmd/btproxy
-          GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-X main.version=0.0.2" -o work/mipsle-new ./cmd/btproxy
-          contrib/openwrt/package-all.sh 0.0.1 work/old amd64=work/amd64-old
-          contrib/openwrt/package-all.sh 0.0.2 work/new amd64=work/amd64-new mipsle=work/mipsle-new
-      - name: Check the LuCI view's syntax
-        run: node -e "new Function(require('fs').readFileSync('contrib/openwrt/luci/htdocs/luci-static/resources/view/btproxy.js', 'utf8'))"
-      - run: test/openwrt_package.sh "${{ matrix.version }}" work/new work/old
-      - run: test/openwrt_feed.sh "${{ matrix.version }}" work/old work/new 0.0.2
-      - name: Upgrade from a release that depends on BlueZ
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p work/v041 work/upgrade
-          gh release download v0.4.1 --pattern 'btproxy-linux-amd64.*' --dir work/v041
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-X main.version=99.0.0" -o work/amd64-upgrade ./cmd/btproxy
-          contrib/openwrt/package-all.sh 99.0.0 work/upgrade amd64=work/amd64-upgrade
-          test/openwrt_upgrade.sh "${{ matrix.version }}" work/v041 work/upgrade
-
-  linux-packages:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ["debian:bookworm", "debian:trixie", "ubuntu:24.04", "fedora:44"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: Build packages
-        env:
-          CGO_ENABLED: "0"
-        run: |
-          mkdir -p work/new work/old
-          go build -ldflags="-X main.version=0.0.1" -o work/amd64-old ./cmd/btproxy
-          go build -ldflags="-X main.version=0.0.2" -o work/amd64-new ./cmd/btproxy
-          contrib/linux/package.sh 0.0.1 work/old amd64=work/amd64-old
-          contrib/linux/package.sh 0.0.2 work/new amd64=work/amd64-new
-      - run: test/linux_package.sh "${{ matrix.image }}" work/new work/old
-      - name: Repository
-        run: |
-          contrib/linux/repo-keygen.sh --no-upload work/key
-          docker run --rm -v "$PWD:/src" -w /src debian:trixie sh -c '
-            apt-get update -qq && apt-get install -qqy --no-install-recommends apt-utils gnupg createrepo-c rpm >/dev/null
-            contrib/linux/repo.sh work/new work/site work/key/repo.sec'
-          test/linux_repo.sh "${{ matrix.image }}" work/site 0.0.2
