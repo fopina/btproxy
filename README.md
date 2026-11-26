@@ -9,3 +9,4 @@ Changes in this fork are tracked in [PR #1](https://github.com/fopina/btproxy/pu
 - Dropped Windows from CI and binary releases.
 - Added a scheduled and manually triggered workflow to open PRs for new stable upstream releases.
 - Removed MIPS builds; CI and binary releases now target Linux amd64 and ARM only.
+- Updated the README flag-table check to skip when this fork delegates documentation to upstream.
