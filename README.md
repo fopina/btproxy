@@ -3,3 +3,4 @@ This is a fork of [yuzi-co/btproxy](https://github.com/yuzi-co/btproxy); see [up
 ## CHANGELIST
 
 - Updated the CI push trigger to follow the `main` branch.
+- Removed OpenWrt and Linux package builds and repository publishing; tagged releases now publish static binary archives and Docker images only.
