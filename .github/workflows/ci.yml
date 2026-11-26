@@ -1,10 +1,10 @@
 name: CI
 
 # Changes that touch only documentation skip CI: nothing here builds or tests it. No status check is required on
-# master, so a skipped run does not hold up a merge.
+# main, so a skipped run does not hold up a merge.
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths-ignore: ['**.md', 'docs/**']
   pull_request:
     paths-ignore: ['**.md', 'docs/**']
