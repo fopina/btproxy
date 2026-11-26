@@ -1,0 +1,25 @@
+name: Upstream updates
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  autoupdate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+      - uses: fopina/upstream-to-pr@v1
+        with:
+          token: ${{ secrets.PAT }}
+          upstream-repository: https://github.com/yuzi-co/btproxy
+          upstream-tag: '^v\d+\.\d+\.\d+$'
