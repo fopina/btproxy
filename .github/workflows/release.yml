@@ -33,12 +33,10 @@ jobs:
           GOOS=linux GOARCH=arm64 build linux-arm64 btproxy
           GOOS=linux GOARCH=arm GOARM=7 build linux-armv7 btproxy
           GOOS=linux GOARCH=mipsle GOMIPS=softfloat build linux-mipsle btproxy
-          GOOS=windows GOARCH=amd64 build windows-amd64 btproxy.exe "-H windowsgui"
           mkdir -p dist
           for d in pkg/linux-*; do
             tar -C "$d" --owner=0 --group=0 -cf - btproxy LICENSE README.md | gzip -9 > "dist/btproxy-${d#pkg/}.tar.gz"
           done
-          (cd pkg/windows-amd64 && zip -9q ../../dist/btproxy-windows-amd64.zip btproxy.exe LICENSE README.md)
           (cd dist && sha256sum btproxy* > SHA256SUMS)
       - name: Publish
         env:

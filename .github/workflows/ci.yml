@@ -36,22 +36,6 @@ jobs:
           GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -o /dev/null ./cmd/btproxy
           GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags nonoise -o /dev/null ./cmd/btproxy
           GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags nobluez -o /dev/null ./cmd/btproxy
-          GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui -o /dev/null ./cmd/btproxy
-      - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-
-  windows:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      CGO_ENABLED: "0"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - run: go vet ./...
-      - run: go test ./...
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
