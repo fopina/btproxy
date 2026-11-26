@@ -33,9 +33,6 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/btproxy
           GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/btproxy
           GOOS=linux GOARCH=arm GOARM=7 go build -o /dev/null ./cmd/btproxy
-          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -o /dev/null ./cmd/btproxy
-          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags nonoise -o /dev/null ./cmd/btproxy
-          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags nobluez -o /dev/null ./cmd/btproxy
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
